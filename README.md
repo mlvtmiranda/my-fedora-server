@@ -1,117 +1,80 @@
 # my-fedora-server
 
-Cola de comandos do setup do meu Fedora Server. Não é tutorial — é pra eu lembrar o que fiz e
-onde buscar cada valor.
+Fedora Server 44 setup — command reference.
 
-Baseado em: [TechHut — the ULTIMATE Fedora Server Guide](https://www.youtube.com/watch?v=kOEcTGZWiUQ)
-· [versão escrita](https://techhut.tv/fedora-server-guide-cockpit-zfs-podman)
+Placeholders are written as `{value}`. Every `{value}` is obtained by the discovery command
+shown right above it. No values from the video are hardcoded.
+`# check` marks something to confirm on this machine before running.
 
-Convenções:
-- `<algo>` = placeholder, pegar o valor com o comando logo acima.
-- `# confere` = validar no meu caso antes de rodar.
-- Nenhum valor daqui é o do vídeo. Todos os IPs, discos e interfaces saem dos comandos de descoberta.
+**Hardware:** Beelink · Intel Celeron N5095A (4c, 800–2900 MHz) · 8 GB RAM · 238 GB SSD
 
-## Hardware
-
-Beelink · Intel Celeron N5095A (4 núcleos, 800–2900 MHz) · 8 GB RAM · SSD 238 GB · Fedora Server 44
-
-## Estado atual
-
-| | |
-|---|---|
-| Feito até | atualizações automáticas |
-| Próximo | Docker (seção final, ainda não executado) |
-| Não feito | ZFS (não preciso por ora) · NVIDIA (sem GPU dedicada) · Podman (vou de Docker) |
+**Status:** done through automatic updates · next: Docker · not configured: ZFS, NVIDIA (no dGPU)
 
 ---
 
 ## 1. BIOS
 
-Del/F7 no boot. Nomes variam no BIOS da Beelink — `# confere` em todos.
+Menu names vary on this board — `# check` all of them.
 
-- `Advanced` → `CPU Configuration` → **Intel Virtualization Technology (VT-x)** = `Enabled`
-- `Advanced` → **VT-d / IOMMU** = `Enabled`
-- `Chipset`/`Power` → **Restore on AC Power Loss** / `State After G3` = `Power On`
-  (servidor tem que voltar sozinho depois de queda de luz)
-- **Fast Boot** = `Disabled` (senão não dá tempo de entrar no setup)
-- **Boot order**: USB na frente durante a instalação, depois SSD interno
-- **Secure Boot**: deixei ligado. Só desligar se precisar de módulo DKMS (ZFS, NVIDIA)
+1. `Advanced` → `CPU Configuration` → Intel Virtualization Technology (VT-x) = `Enabled`
+2. `Chipset` / `Power` → Restore on AC Power Loss = `Power On`
+3. `Boot` → boot order: USB first to install, internal SSD after
+4. `Boot` → Secure Boot = left enabled (only disable it if a DKMS module is needed)
 
-Conferir depois, já no sistema:
+## 2. First access
 
-```bash
-lscpu | grep -i virtualization          # espera: VT-x
-sudo dmesg | grep -iE 'DMAR|IOMMU' | head
-```
-
-## 2. Instalação
-
-ISO em <https://fedoraproject.org/server/download>.
-
-Gravar o pendrive (rodei no desktop). Identificar o dispositivo **antes**:
-
-```bash
-lsblk -o NAME,SIZE,MODEL,TRAN,MOUNTPOINTS   # o USB é o de TRAN=usb
-sudo dd if=Fedora-Server-dvd-x86_64-44-*.iso of=/dev/<sdX> bs=4M status=progress oflag=direct conv=fsync
-```
-
-Alternativa sem dd: `flatpak install flathub org.fedoraproject.MediaWriter`
-
-No Anaconda:
-
-- **Installation Destination**: marcar só o disco do SO. Layout default (LVM + XFS), sem mexer.
-- **Network & Hostname**: habilitar a interface e já definir o hostname.
-- **Root Account**: desabilitado (uso `sudo` pelo meu usuário).
-- **User Creation**: usuário admin, marcar "Add administrative privileges".
-- **Software Selection**: `Fedora Server Edition` + addon `Headless Management` (é o que traz o Cockpit).
-
-Pegadinha: o instalador aloca só ~15 GB na raiz mesmo em disco grande. Resolvido na seção 4.
-
-## 3. Primeiro acesso
-
-Descobrir o IP do servidor (na tela dele, ou pelo DHCP do roteador):
+1. Get the server IP (from its own screen, or the router's DHCP list):
 
 ```bash
 ip -4 addr show scope global | grep inet
 ```
 
-Cockpit em `https://<ip-do-servidor>:9090` — aceitar o certificado self-signed.
-Se não subir:
+2. Open Cockpit and accept the self-signed certificate:
 
-```bash
-sudo systemctl enable --now cockpit.socket
+```
+https://{server_ip}:9090
 ```
 
-### SSH por chave
+3. Log in with the user created during installation. Terminal tab gives a full shell.
 
-No **cliente** (meu desktop), gerar a chave — Enter em tudo:
+## 3. Install nano
+
+First thing, so the config files below can be edited:
 
 ```bash
-ssh-keygen -t ed25519 -C "$(whoami)@$(hostname)"
+sudo dnf install -y nano
+```
+
+## 4. Config SSH
+
+1. Generate the key on the client machine (Enter through all prompts):
+
+```bash
+ssh-keygen -t ed25519 -C "{key_comment}"
+```
+
+2. Print the public key and copy the whole line:
+
+```bash
 cat ~/.ssh/id_ed25519.pub
 ```
 
-Colar no servidor. O jeito do vídeo, pelo terminal do Cockpit:
+3. Add it to the server (Cockpit terminal). Paste into nano, `Ctrl+X` `Y` `Enter`:
 
 ```bash
-mkdir -p ~/.ssh && chmod 700 ~/.ssh
-nano ~/.ssh/authorized_keys      # cola a pubkey, Ctrl+X Y Enter
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+nano ~/.ssh/authorized_keys
 chmod 600 ~/.ssh/authorized_keys
 ```
 
-Atalho pro futuro (faz as três coisas de uma vez, do cliente):
+4. Test key login from the client:
 
 ```bash
-ssh-copy-id <usuario>@<ip-do-servidor>
+ssh {user}@{server_ip}
 ```
 
-Testar antes de travar a senha:
-
-```bash
-ssh <usuario>@<ip-do-servidor>
-```
-
-Desligar login por senha:
+5. Turn off password authentication:
 
 ```bash
 sudo nano /etc/ssh/sshd_config.d/50-disable-password.conf
@@ -125,43 +88,48 @@ PasswordAuthentication no
 sudo systemctl restart sshd
 ```
 
-Verificar que a senha morreu (tem que dar `Permission denied (publickey,...)`):
+6. Confirm it is off — expected: `Permission denied (publickey,gssapi-keyex,gssapi-with-mic)`:
 
 ```bash
-ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no <usuario>@<ip-do-servidor>
+ssh -o PreferredAuthentications=password -o PubkeyAuthentication=no {user}@{server_ip}
 ```
 
-## 4. Expandir a raiz
+## 5. Expand root partition
 
-Ver o tamanho atual e de onde vem a raiz:
+The installer allocates ~15 GB to root regardless of disk size.
+
+1. Check size, resolve the logical volume path and the free space in the volume group:
 
 ```bash
 df -h /
-findmnt -no SOURCE /        # ex.: /dev/mapper/<vg>-<lv>
-sudo vgs                    # coluna VFree = espaço livre no volume group
-sudo lvs
+findmnt -no SOURCE /     # -> /dev/mapper/{vg}-{lv}
+sudo vgs                 # VFree column
 ```
 
-Usar o caminho que o `findmnt` devolveu:
+2. Extend and grow the filesystem:
 
 ```bash
-sudo lvextend -l +100%FREE <caminho-do-lv>
+sudo lvextend -l +100%FREE {lv_path}
 sudo xfs_growfs /
 df -h /
 ```
 
-## 5. Update e dnf.conf
+## 6. Update the system
 
 ```bash
 sudo dnf upgrade -y
 ```
 
-Ver o que já está configurado e as opções disponíveis:
+## 7. Config dnf
+
+1. Read the current config and the available options:
 
 ```bash
 cat /etc/dnf/dnf.conf
 man dnf5.conf
 ```
+
+2. Edit:
 
 ```bash
 sudo nano /etc/dnf/dnf.conf
@@ -175,108 +143,101 @@ fastestmirror=True
 keepcache=True
 ```
 
-## 6. Pacotes básicos
+## 8. Essential packages
 
 ```bash
 sudo dnf install -y curl wget git htop net-tools unzip util-linux-user nano
 ```
 
-## 7. Hostname
+## 9. Static IP
+
+1. Get the device and connection names:
 
 ```bash
-hostnamectl                                  # estado atual
-sudo hostnamectl set-hostname <nome-do-host>
-```
-
-## 8. Rede — IP fixo
-
-Descobrir interface e nome da conexão:
-
-```bash
-nmcli device status                  # coluna DEVICE (ex.: enp1s0) e CONNECTION
+nmcli device status       # DEVICE and CONNECTION columns
 nmcli connection show
 ```
 
-Pegar os valores que o DHCP já entregou — são exatamente os que vou reusar no modo manual:
+2. Read the values DHCP already assigned — these are the ones to reuse in manual mode:
 
 ```bash
-nmcli -f IP4 device show <iface>     # IP4.ADDRESS[1], IP4.GATEWAY, IP4.DNS[1]
+nmcli -f IP4 device show {iface}   # IP4.ADDRESS[1], IP4.GATEWAY, IP4.DNS[1]
+ip -4 addr show {iface}            # address/prefix
+ip route show default              # gateway, after "via"
+resolvectl dns                     # DNS in use
 ```
 
-Ou separado:
+3. Pick an address outside the router's DHCP range, keeping the same prefix and gateway:
 
 ```bash
-ip -4 addr show <iface>              # address/prefixo (ex.: 192.168.x.y/24)
-ip route show default                # gateway (o IP depois de "via")
-resolvectl dns                       # DNS em uso
-```
-
-Escolher o IP fixo **fora da faixa do DHCP do roteador** (ver no painel do roteador), mantendo
-o mesmo /prefixo e gateway.
-
-```bash
-sudo nmcli connection modify "<nome-da-conexao>" \
+sudo nmcli connection modify "{connection_name}" \
     ipv4.method manual \
-    ipv4.addresses <ip-escolhido>/<prefixo> \
-    ipv4.gateway <gateway> \
-    ipv4.dns "<dns1>,<dns2>"
+    ipv4.addresses {static_ip}/{prefix} \
+    ipv4.gateway {gateway} \
+    ipv4.dns "{dns}"
 
-sudo nmcli connection up "<nome-da-conexao>"
-ip addr show <iface>
+sudo nmcli connection up "{connection_name}"
+ip addr show {iface}
 ```
 
-Voltar pra DHCP (e aí reservar o IP no roteador, que é a alternativa mais simples):
+4. Or keep DHCP and set a reservation in the router instead:
 
 ```bash
-sudo nmcli connection modify "<nome-da-conexao>" \
-    ipv4.method auto ipv4.addresses "" ipv4.gateway "" ipv4.dns ""
-sudo nmcli connection up "<nome-da-conexao>"
+sudo nmcli connection modify "{connection_name}" \
+    ipv4.method auto \
+    ipv4.addresses "" \
+    ipv4.gateway "" \
+    ipv4.dns ""
+
+sudo nmcli connection up "{connection_name}"
 ```
 
-Se a conexão não obedecer:
+If the connection does not apply the change:
 
 ```bash
 sudo systemctl restart NetworkManager
 ```
 
-## 9. Firewall
+## 10. Config firewall
 
-Estado e regras atuais:
+1. Check state and current rules:
 
 ```bash
 sudo firewall-cmd --state
-sudo firewall-cmd --get-active-zones
 sudo firewall-cmd --list-all
 ```
 
-Descobrir o nome certo do serviço antes de liberar, e quais portas estão de fato escutando:
+2. Resolve the service name to open, and which ports are actually listening:
 
 ```bash
-sudo firewall-cmd --get-services | tr ' ' '\n' | grep -i <termo>
+sudo firewall-cmd --get-services | tr ' ' '\n' | grep -i {term}
 sudo ss -tlnp
 ```
 
+3. Open and reload:
+
 ```bash
-sudo firewall-cmd --permanent --add-service=cockpit
 sudo firewall-cmd --permanent --add-service=http
 sudo firewall-cmd --permanent --add-service=https
-sudo firewall-cmd --permanent --add-port=<porta>/tcp
+sudo firewall-cmd --permanent --add-service=cockpit
+sudo firewall-cmd --permanent --add-port={port}/tcp
 sudo firewall-cmd --reload
 sudo firewall-cmd --list-all
 ```
 
-## 10. Atualizações automáticas
+## 11. Automatic updates
 
-No Fedora 44 é dnf5 — o pacote virou `dnf5-plugin-automatic` e o timer é `dnf5-automatic.timer`
-(o `dnf-automatic.timer` do vídeo é o compat antigo).
+Fedora 44 runs dnf5: the package resolves to `dnf5-plugin-automatic` and the unit is
+`dnf5-automatic.timer` — `dnf-automatic.timer` is the legacy compat unit.
+
+1. Install and confirm the unit name:
 
 ```bash
-sudo dnf install -y dnf-automatic        # resolve pra dnf5-plugin-automatic
+sudo dnf install -y dnf-automatic
 systemctl list-unit-files 'dnf*automatic*'
-rpm -ql dnf5-plugin-automatic | grep -E 'conf|timer'
 ```
 
-Defaults ficam em `/usr/share/dnf5/dnf5-plugins/automatic.conf`; meus overrides:
+2. Configure — defaults live in `/usr/share/dnf5/dnf5-plugins/automatic.conf`, overrides go here:
 
 ```bash
 sudo nano /etc/dnf/automatic.conf
@@ -288,20 +249,18 @@ upgrade_type = security
 apply_updates = yes
 ```
 
+3. Enable the timer:
+
 ```bash
 sudo systemctl enable --now dnf5-automatic.timer
-systemctl list-timers 'dnf*'          # confirma o próximo disparo
-journalctl -u dnf5-automatic.service  # ver o que rodou
-man dnf5-automatic                    # emit_via, random_sleep, etc.
+systemctl list-timers 'dnf*'
 ```
-
-**← parei aqui.**
 
 ---
 
-## Próximo passo: Docker (ainda não executado)
+## 12. Docker — not in the video, not executed yet
 
-O guia usa Podman; vou de Docker. Repo oficial, não o `moby-engine` do Fedora:
+The video uses Podman. Official repo, not Fedora's `moby-engine`:
 
 ```bash
 sudo dnf -y install dnf-plugins-core
@@ -312,7 +271,7 @@ docker --version && docker compose version
 sudo docker run --rm hello-world
 ```
 
-Usar docker sem sudo (precisa relogar depois):
+Rootless group access (requires re-login):
 
 ```bash
 sudo usermod -aG docker "$USER"
@@ -320,7 +279,12 @@ newgrp docker
 docker run --rm hello-world
 ```
 
-## Fora do escopo por agora
+## Not configured
 
-- **ZFS** — não configurado, um disco só.
-- **NVIDIA** — sem GPU dedicada neste Beelink.
+- **ZFS** — single disk, not needed yet.
+- **NVIDIA** — no dedicated GPU on this machine.
+
+## CREDITS
+
+- TechHut — [the ULTIMATE Fedora Server Guide](https://www.youtube.com/watch?v=kOEcTGZWiUQ)
+  · [written version](https://techhut.tv/fedora-server-guide-cockpit-zfs-podman)
