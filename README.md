@@ -1,14 +1,15 @@
 # my-fedora-server
 
-Fedora Server 44 setup — command reference.
+## CREDITS
 
-Placeholders are written as `{value}`. Every `{value}` is obtained by the discovery command
-shown right above it. No values from the video are hardcoded.
-`# check` marks something to confirm on this machine before running.
+- TechHut — [the ULTIMATE Fedora Server Guide](https://www.youtube.com/watch?v=kOEcTGZWiUQ)
+  · [written version](https://techhut.tv/fedora-server-guide-cockpit-zfs-podman)
 
-**Hardware:** Beelink · Intel Celeron N5095A (4c, 800–2900 MHz) · 8 GB RAM · 238 GB SSD
+Fedora Server 44 setup
 
-**Status:** done through automatic updates · next: Docker · not configured: ZFS, NVIDIA (no dGPU)
+**Hardware:** Intel Celeron N5095A (4c, 800–2900 MHz) · 8 GB RAM · 238 GB SSD
+
+**Status:** done through automatic updates · next: Docker
 
 ---
 
@@ -258,33 +259,12 @@ systemctl list-timers 'dnf*'
 
 ---
 
-## 12. Docker — not in the video, not executed yet
+## 12. Setup containerization
 
-The video uses Podman. Official repo, not Fedora's `moby-engine`:
+Might use docker..
 
-```bash
-sudo dnf -y install dnf-plugins-core
-sudo dnf config-manager addrepo --from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo
-sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo systemctl enable --now docker
-docker --version && docker compose version
-sudo docker run --rm hello-world
-```
-
-Rootless group access (requires re-login):
-
-```bash
-sudo usermod -aG docker "$USER"
-newgrp docker
-docker run --rm hello-world
-```
 
 ## Not configured
 
 - **ZFS** — single disk, not needed yet.
 - **NVIDIA** — no dedicated GPU on this machine.
-
-## CREDITS
-
-- TechHut — [the ULTIMATE Fedora Server Guide](https://www.youtube.com/watch?v=kOEcTGZWiUQ)
-  · [written version](https://techhut.tv/fedora-server-guide-cockpit-zfs-podman)
